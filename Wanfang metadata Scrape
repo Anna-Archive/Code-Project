@@ -1,0 +1,87 @@
+import requests
+import json
+import time
+from pathlib import Path
+
+# 配置
+URL = "http://lninfo.com.cn:8088/api/rmscloud/searchByCate"
+TIMEOUT = 300
+OUTPUT_TXT = "year_totals_1517_to_2026.txt"
+P_SIZE = 50  # 保持你的分页大小
+MAX_PAGE = 200000  # 你原本设的很大，应该够用
+
+total_sum = 0
+years_over_10million = []
+
+with open(OUTPUT_TXT, "w", encoding="utf-8") as f:
+    f.write("年份\t总数\ttotal是否>1000万\t响应时间(ms)\t备注\n")
+    f.write("-" * 60 + "\n")
+
+    # 从2026递减到1517
+    for year in range(1977, 1516, -1):  # 包含1517
+        query = f"(*) AND YEAR:[{year} TO {year}]"
+
+        payload = {
+            "indexCate": 1,
+            "queryString": query,
+            "language": "null",
+            "sortField": "",
+            "includes": "",
+            "iPage": 200000,
+            "pSize": P_SIZE,
+            "aggFields": "",
+            "aggSize": 0,
+            "agglog": 1,
+        }
+
+        try:
+            start_time = time.time()
+            resp = requests.post(URL, data=payload, timeout=TIMEOUT)
+            resp.raise_for_status()
+            elapsed_ms = int((time.time() - start_time) * 1000)
+
+            data = resp.json()
+
+            # 打印到控制台（可选）
+            print(f"{year} → {data}")
+
+            # 提取总数（假设结构固定）
+            total = 0
+            try:
+                total = data["data"]["total"]
+            except (KeyError, TypeError):
+                total = -1  # 出错标记
+
+            total_sum += total if total > 0 else 0
+
+            over_10m = total > 10_000_000
+            if over_10m:
+                years_over_10million.append(year)
+
+            # 写入文件
+            status = "超过1000万" if over_10m else ""
+            f.write(f"{year}\t{total:,}\t{status}\t{elapsed_ms}ms\t{json.dumps(data, ensure_ascii=False)}\n")
+
+        except requests.exceptions.RequestException as e:
+            error_msg = f"请求失败: {str(e)}"
+            print(f"{year} → {error_msg}")
+            f.write(f"{year}\t错误\t-\t-\t{error_msg}\n")
+
+        # 可选：避免请求太快被限流
+        time.sleep(0.3)  # 每0.3秒请求一次，可根据实际情况调整或去掉
+
+    # 总结
+    f.write("\n" + "=" * 60 + "\n")
+    f.write(f"总记录数（所有年份total之和）：{total_sum:,}\n")
+    f.write(f"共有 {len(years_over_10million)} 个年份超过1000万条记录\n")
+    if years_over_10million:
+        f.write("超过1000万的年份：\n")
+        for y in sorted(years_over_10million):
+            f.write(f"  {y}\n")
+
+print(f"\n执行完成。所有结果已保存到：{Path(OUTPUT_TXT).resolve()}")
+print(f"总记录数：{total_sum:,}")
+if years_over_10million:
+    print("超过1000万的年份：", ", ".join(map(str, sorted(years_over_10million))))
+else:
+    print("没有年份超过1000万条记录")
