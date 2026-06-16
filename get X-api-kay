@@ -16,11 +16,9 @@ def get_x_api_key():
         def handle_request(route):
             nonlocal api_key
             headers = route.request.headers
-            # 找到目标header后赋值并停止监听
             if "x-api-kay" in headers and api_key is None:
                 api_key = headers["x-api-kay"]
                 print("拦截到第一个 x-api-kay:", api_key)
-                # 移除路由监听，避免后续请求重复处理
                 page.unroute("**/*", handle_request)
             route.continue_()
 
