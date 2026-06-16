@@ -1,0 +1,46 @@
+from playwright.sync_api import sync_playwright
+
+
+def get_x_api_key():
+    with sync_playwright() as p:
+        # 启动浏览器（无头模式）
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+        )
+        page = context.new_page()
+
+        api_key = None
+
+        # 监听请求，获取第一个x-api-key后立即停止
+        def handle_request(route):
+            nonlocal api_key
+            headers = route.request.headers
+            # 找到目标header后赋值并停止监听
+            if "x-api-kay" in headers and api_key is None:
+                api_key = headers["x-api-kay"]
+                print("拦截到第一个 x-api-kay:", api_key)
+                # 移除路由监听，避免后续请求重复处理
+                page.unroute("**/*", handle_request)
+            route.continue_()
+
+        # 注册路由监听
+        page.route("**/*", handle_request)
+
+        # 访问目标页面
+        page.goto("https://z.library.sh.cn/next/resource/eds/search?searchTerm=*&lang=zh_CN", timeout=60000)
+
+        # 等待直到获取到api_key（最多等10秒，避免无限等待）
+        page.wait_for_function("window.__API_KEY__ !== undefined", timeout=10000) if api_key is None else None
+
+        # 关闭浏览器
+        browser.close()
+        return api_key
+
+
+if __name__ == "__main__":
+    key = get_x_api_key()
+    if key:
+        print("成功获取第一个 x-api-kay:", key)
+    else:
+        print("未拦截到 x-api-kay，请检查页面或网络请求")
